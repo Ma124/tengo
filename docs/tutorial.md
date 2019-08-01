@@ -114,7 +114,7 @@ In Tengo, array is an ordered list of values of any types. Elements of an array 
 [1, 2, 3][2]       // == 3
 [1, 2, 3][3]       // == undefined
 
-["foo", "bar", [1, 2, 3]   // ok: array with an array element
+["foo", "bar", [1, 2, 3]]   // ok: array with an array element
 ``` 
 
 #### Map Values
