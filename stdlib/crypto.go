@@ -2,6 +2,7 @@ package stdlib
 
 import (
 	"crypto"
+	"crypto/hmac"
 	"encoding/hex"
 	"github.com/d5/tengo/objects"
 	"hash"
@@ -11,7 +12,10 @@ import (
 var cryptoModule = make(map[string]objects.Object, len(hashNames))
 
 // TODO [crypto](https://github.com/d5/tengo/blob/master/docs/stdlib-crypto.md): cryptographic functions like hashes and ciphers
-// TODO ciphers
+// TODO keyderiv
+// TODO x509
+// TODO symmetric and asymmetric ciphers
+// TODO update rand module to be cryptographically secure
 
 func init() {
 	ReloadCryptoAlgorithms()
@@ -30,11 +34,16 @@ func ReloadCryptoAlgorithms() {
 		}
 		cryptoModule[n] = &objects.UserFunction{Name: n, Value: newHashFunc(h.New(), false)}
 		cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(h.New(), true)}
+		cryptoModule["hmac_"+n] = &objects.UserFunction{Name: "hmac_" + n, Value: newHMACFunc(hmacByHash(h), false)}
+		cryptoModule["hmac_"+n+"_hex"] = &objects.UserFunction{Name: "hmac_" + n + "_hex", Value: newHMACFunc(hmacByHash(h), true)}
 	}
 }
 
-// Should be the same as crypto.maxHash
-const maxHash = 20
+func hmacByHash(h crypto.Hash) func(key []byte) hash.Hash {
+	return func(key []byte) hash.Hash {
+		return hmac.New(h.New, key)
+	}
+}
 
 // vim command for generation from buffer with newline separated entries: %s/\v^(\w+)$/crypto.\1: "\1",/g
 var hashNames = map[crypto.Hash]string{
@@ -65,28 +74,65 @@ func newHashFunc(h hash.Hash, returnHex bool) objects.CallableFunc {
 			return nil, objects.ErrWrongNumArguments
 		}
 
-		inp, ok := args[0].(*objects.Bytes)
+		inp, ok := objects.ToByteSlice(args[0])
 		if !ok {
-			s, ok := args[0].(*objects.String)
-			if ok {
-				inp = &objects.Bytes{
-					Value: []byte(s.Value),
-				}
-			} else {
-				return nil, objects.ErrInvalidArgumentType{
-					Name:     "first",
-					Expected: "bytes",
-					Found:    args[0].TypeName(),
-				}
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
 			}
 		}
 
-		h.Write(inp.Value)
+		h.Write(inp)
 
 		out := make([]byte, 0, h.Size())
 
 		out = h.Sum(out)
 		h.Reset()
+
+		if returnHex {
+			return &objects.String{
+				Value: hex.EncodeToString(out),
+			}, nil
+		} else {
+			return &objects.Bytes{
+				Value: out,
+			}, nil
+		}
+	}
+}
+
+func newHMACFunc(newMac func(key []byte) hash.Hash, returnHex bool) objects.CallableFunc {
+	return func(args ...objects.Object) (objects.Object, error) {
+		if len(args) != 2 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		inp, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+
+		key, ok := objects.ToByteSlice(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "key",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		h := newMac(key)
+		h.Write(inp)
+
+		out := make([]byte, 0, h.Size())
+
+		out = h.Sum(out)
 
 		if returnHex {
 			return &objects.String{
