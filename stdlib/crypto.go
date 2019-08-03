@@ -32,16 +32,21 @@ func ReloadCryptoAlgorithms() {
 		if _, ok := cryptoModule[n]; ok {
 			continue
 		}
-		cryptoModule[n] = &objects.UserFunction{Name: n, Value: newHashFunc(h.New(), false)}
-		cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(h.New(), true)}
-		cryptoModule["hmac_"+n] = &objects.UserFunction{Name: "hmac_" + n, Value: newHMACFunc(hmacByHash(h), false)}
-		cryptoModule["hmac_"+n+"_hex"] = &objects.UserFunction{Name: "hmac_" + n + "_hex", Value: newHMACFunc(hmacByHash(h), true)}
+
+		registerHash(n, h.New)
 	}
 }
 
-func hmacByHash(h crypto.Hash) func(key []byte) hash.Hash {
+func registerHash(n string, newHash func() hash.Hash) {
+	cryptoModule[n] = &objects.UserFunction{Name: n, Value: newHashFunc(newHash, false)}
+	cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(newHash, true)}
+	cryptoModule["hmac_"+n] = &objects.UserFunction{Name: "hmac_" + n, Value: newHMACFunc(hmacByHash(newHash), false)}
+	cryptoModule["hmac_"+n+"_hex"] = &objects.UserFunction{Name: "hmac_" + n + "_hex", Value: newHMACFunc(hmacByHash(newHash), true)}
+}
+
+func hmacByHash(newHash func() hash.Hash) func(key []byte) hash.Hash {
 	return func(key []byte) hash.Hash {
-		return hmac.New(h.New, key)
+		return hmac.New(newHash, key)
 	}
 }
 
@@ -68,7 +73,7 @@ var hashNames = map[crypto.Hash]string{
 	crypto.BLAKE2b_512: "BLAKE2b_512",
 }
 
-func newHashFunc(h hash.Hash, returnHex bool) objects.CallableFunc {
+func newHashFunc(newHash func() hash.Hash, returnHex bool) objects.CallableFunc {
 	return func(args ...objects.Object) (objects.Object, error) {
 		if len(args) != 1 {
 			return nil, objects.ErrWrongNumArguments
@@ -83,12 +88,12 @@ func newHashFunc(h hash.Hash, returnHex bool) objects.CallableFunc {
 			}
 		}
 
+		h := newHash()
 		h.Write(inp)
 
 		out := make([]byte, 0, h.Size())
 
 		out = h.Sum(out)
-		h.Reset()
 
 		if returnHex {
 			return &objects.String{
