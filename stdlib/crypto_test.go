@@ -3,10 +3,80 @@ package stdlib_test
 import (
 	_ "crypto/sha256"
 	_ "crypto/sha512"
+	"encoding/base64"
 	"encoding/hex"
+	"github.com/d5/tengo/objects"
 	"github.com/d5/tengo/stdlib"
 	"testing"
 )
+
+// len(ciphAESIV) == AESBlockSize == 16
+const ciphAESIV = "1234567890123456"
+
+// len(ciphAES128Key) == AES128KeySize == 16
+const ciphAES128Key = "6543210987654321"
+
+// len(ciphPlain1) == AESBlockSize
+const ciphPlain1 = "abcdefghijklmnop"
+
+// len(ciphPlain2) == (AESBlockSize/2)-1
+const ciphPlain2 = "abcdefg"
+
+// len(ciphPlain3) == (AESBlockSize * 2) + ((AESBlockSize/2)-1)
+const ciphPlain3 = "abcdefghijklmnopabcdefghijklmnopabcdefg"
+
+func TestCryptoModuleCipher(t *testing.T) {
+	testCipherFunc(t, "aes_cbc", ciphPlain1, ciphAES128Key, ciphAESIV, "L+BfSsDnX1I1eiSWDxxg3Q==")
+
+	testCipherFunc(t, "aes_ctr", ciphPlain1, ciphAES128Key, ciphAESIV, "9Tv9rHveyjeO4a/6UDoRdQ==")
+	testCipherFunc(t, "aes_ctr", ciphPlain2, ciphAES128Key, ciphAESIV, "9Tv9rHveyg==")
+	testCipherFunc(t, "aes_ctr", ciphPlain3, ciphAES128Key, ciphAESIV, "9Tv9rHveyjeO4a/6UDoRdUTnR6fCxieR1473kNfqo4XzwKc0Cnw8")
+
+	testCipherFunc(t, "aes_ofb", ciphPlain1, ciphAES128Key, ciphAESIV, "9Tv9rHveyjeO4a/6UDoRdQ==")
+	testCipherFunc(t, "aes_ofb", ciphPlain2, ciphAES128Key, ciphAESIV, "9Tv9rHveyg==")
+	testCipherFunc(t, "aes_ofb", ciphPlain3, ciphAES128Key, ciphAESIV, "9Tv9rHveyjeO4a/6UDoRdZ0leQQ8Z40RCwkMEr5igiBFUdFvJe/C")
+
+	module(t, `crypto`).call("encrypt_aes_cbc").expectError()
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1).expectError()
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key).expectError()
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key, ciphAESIV, "too many").expectError()
+
+	module(t, `crypto`).call("encrypt_aes_cbc", 1, ciphAES128Key, ciphAESIV).expectError()
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain3, ciphAES128Key, ciphAESIV).expectError()
+
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, 1, ciphAESIV).expectError()
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key+"a", ciphAESIV).expectError()
+
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key, 1).expectError()
+	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key, ciphPlain3).expectError()
+
+	module(t, `crypto`).call("rand_bytes").expectError()
+	module(t, `crypto`).call("rand_bytes", 1, 1).expectError()
+	module(t, `crypto`).call("rand_bytes", -1).expectError()
+	module(t, `crypto`).call("rand_bytes", &objects.Array{}).expectError()
+	o := module(t, `crypto`).call("rand_bytes", 8).o
+	bs, ok := o.(*objects.Bytes)
+	if !ok {
+		t.Errorf("crypto.rand_bytes(8) returns wrong type: %T", o)
+	} else if len(bs.Value) != 8 {
+		t.Errorf("crypto.rand_bytes(8) returns wrong length: %v", len(bs.Value))
+	}
+}
+
+func testCipherFunc(t *testing.T, alg, plain, key, iv, ciph string) {
+	t.Run(alg+"__"+plain, func(t *testing.T) {
+		module(t, `crypto`).call("encrypt_"+alg, plain, key, iv).expect(b64MustDecode(ciph))
+		module(t, `crypto`).call("decrypt_"+alg, b64MustDecode(ciph), key, iv).expect([]byte(plain))
+	})
+}
+
+func b64MustDecode(s string) []byte {
+	data, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
 
 const hashInp1 = "abc"
 const hashSha256Hex1 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
@@ -50,7 +120,7 @@ func TestCryptoModuleHash(t *testing.T) {
 }
 
 func testHashFunc(t *testing.T, alg string, inp, hexs, macKey, macHex string) {
-	t.Run(alg+"_"+inp, func(t *testing.T) {
+	t.Run(alg+"__"+inp, func(t *testing.T) {
 		bys, err := hex.DecodeString(hexs)
 		if err != nil {
 			panic(err)
@@ -64,7 +134,7 @@ func testHashFunc(t *testing.T, alg string, inp, hexs, macKey, macHex string) {
 			module(t, `crypto`).call(alg, inp).expect(bys)
 		}
 	})
-	t.Run("hmac_"+alg+"_"+inp, func(t *testing.T) {
+	t.Run("hmac_"+alg+"__"+inp, func(t *testing.T) {
 		macBys, err := hex.DecodeString(macHex)
 		if err != nil {
 			panic(err)

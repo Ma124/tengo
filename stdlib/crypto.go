@@ -2,23 +2,71 @@ package stdlib
 
 import (
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"github.com/d5/tengo/objects"
 	"hash"
 	"strings"
 )
 
-var cryptoModule = make(map[string]objects.Object, len(hashNames))
+var cryptoModule = make(
+	map[string]objects.Object,
+	len(hashNames)*4+ // # of hashes
+		1*4*2+ // # of block ciphers
+		1, // # of utilities
+)
 
 // TODO [crypto](https://github.com/d5/tengo/blob/master/docs/stdlib-crypto.md): cryptographic functions like hashes and ciphers
 // TODO keyderiv
+// TODO paddings for CBC PKCS#7
 // TODO x509
-// TODO symmetric and asymmetric ciphers
-// TODO update rand module to be cryptographically secure
+// TODO asymmetric ciphers
 
 func init() {
 	ReloadCryptoAlgorithms()
+	registerBlockCipher(&blockCiph{
+		MName:      "aes",
+		MBlockSize: aes.BlockSize,
+		MKeySizes:  []int{128 / 8, 192 / 8, 256 / 8},
+		NewBlock: func(key []byte) cipher.Block {
+			c, err := aes.NewCipher(key)
+			if err != nil {
+				// key sizes are checked beforehand
+				panic(err)
+			}
+			return c
+		},
+	})
+	cryptoModule["rand_bytes"] = &objects.UserFunction{Name: "randBytes", Value: func(args ...objects.Object) (objects.Object, error) {
+		if len(args) != 1 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		l, ok := objects.ToInt(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "length",
+				Expected: "int",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		if l < 0 {
+			return nil, objects.ErrIndexOutOfBounds
+		}
+
+		bs := make([]byte, l)
+		_, err := rand.Read(bs)
+		if err != nil {
+			return nil, err
+		}
+
+		return &objects.Bytes{Value: bs}, nil
+	}}
 }
 
 func ReloadCryptoAlgorithms() {
@@ -37,9 +85,225 @@ func ReloadCryptoAlgorithms() {
 	}
 }
 
+type cipherI interface {
+	Name() string
+
+	IVSize() int
+	BlockSize() int
+	KeySizes() []int
+
+	Encrypt(data, key, iv []byte)
+	Decrypt(data, key, iv []byte)
+}
+
+type blockCiph struct {
+	MName      string
+	MBlockSize int
+	MKeySizes  []int
+	NewBlock   func(key []byte) cipher.Block
+}
+
+func (c *blockCiph) Name() string {
+	return c.MName
+}
+
+func (c *blockCiph) IVSize() int {
+	return -1
+}
+
+func (c *blockCiph) BlockSize() int {
+	return c.MBlockSize
+}
+
+func (c *blockCiph) KeySizes() []int {
+	return c.MKeySizes
+}
+
+func (c *blockCiph) Encrypt(data, key, iv []byte) {
+	c.NewBlock(key).Encrypt(data, data)
+}
+
+func (c *blockCiph) Decrypt(data, key, iv []byte) {
+	c.NewBlock(key).Decrypt(data, data)
+}
+
+type blockModeCiph struct {
+	Cipher       cipherI
+	NewEncrypter func(b cipher.Block, iv []byte) cipher.BlockMode
+	NewDecrypter func(b cipher.Block, iv []byte) cipher.BlockMode
+}
+
+func (c *blockModeCiph) Name() string {
+	return c.Cipher.Name()
+}
+
+func (c *blockModeCiph) IVSize() int {
+	return c.BlockSize()
+}
+
+func (c *blockModeCiph) BlockSize() int {
+	return c.Cipher.BlockSize()
+}
+
+func (c *blockModeCiph) KeySizes() []int {
+	return c.Cipher.KeySizes()
+}
+
+func (c *blockModeCiph) Encrypt(data, key, iv []byte) {
+	ciph := c.Cipher
+	cbc := c.NewEncrypter(ciph.(*blockCiph).NewBlock(key), iv)
+	cbc.CryptBlocks(data, data)
+}
+
+func (c *blockModeCiph) Decrypt(data, key, iv []byte) {
+	ciph := c.Cipher
+	cbc := c.NewDecrypter(ciph.(*blockCiph).NewBlock(key), iv)
+	cbc.CryptBlocks(data, data)
+}
+
+type streamCiph struct {
+	MName        string
+	MIVSize      int
+	MKeySizes    []int
+	NewEncStream func(key, iv []byte) cipher.Stream
+	NewDecStream func(key, iv []byte) cipher.Stream
+}
+
+func (c *streamCiph) Name() string {
+	return c.MName
+}
+
+func (c *streamCiph) IVSize() int {
+	return c.MIVSize
+}
+
+func (c *streamCiph) BlockSize() int {
+	return -1
+}
+
+func (c *streamCiph) KeySizes() []int {
+	return c.MKeySizes
+}
+
+func (c *streamCiph) Encrypt(data, key, iv []byte) {
+	c.NewEncStream(key, iv).XORKeyStream(data, data)
+}
+
+func (c *streamCiph) Decrypt(data, key, iv []byte) {
+	if c.NewDecStream == nil {
+		c.NewEncStream(key, iv).XORKeyStream(data, data)
+		return
+	}
+	c.NewDecStream(key, iv).XORKeyStream(data, data)
+}
+
+func registerBlockCipher(ciph cipherI) {
+	registerBlockCipherFuncs(ciph.Name()+"_cbc", &blockModeCiph{
+		Cipher:       ciph,
+		NewEncrypter: cipher.NewCBCEncrypter,
+		NewDecrypter: cipher.NewCBCDecrypter,
+	})
+	registerBlockCipherFuncs(ciph.Name()+"_ctr", &streamCiph{
+		MName: ciph.Name(),
+		NewEncStream: func(key, iv []byte) cipher.Stream {
+			return cipher.NewCTR(ciph.(*blockCiph).NewBlock(key), iv)
+		},
+		MKeySizes: ciph.KeySizes(),
+		MIVSize:   ciph.(*blockCiph).MBlockSize,
+	})
+	registerBlockCipherFuncs(ciph.Name()+"_ofb", &streamCiph{
+		MName: ciph.Name(),
+		NewEncStream: func(key, iv []byte) cipher.Stream {
+			return cipher.NewOFB(ciph.(*blockCiph).NewBlock(key), iv)
+		},
+		MKeySizes: ciph.KeySizes(),
+		MIVSize:   ciph.(*blockCiph).MBlockSize,
+	})
+}
+
+func registerBlockCipherFuncs(n string, ciph cipherI) {
+	cryptoModule["encrypt_"+n] = &objects.UserFunction{Name: "encrypt_" + n, Value: newCrypterFunc(ciph, true)}
+	cryptoModule["decrypt_"+n] = &objects.UserFunction{Name: "decrypt_" + n, Value: newCrypterFunc(ciph, false)}
+}
+
+var ErrKeySize = errors.New("invalid key size")
+var ErrIVSize = errors.New("invalid iv size")
+var ErrDataMultipleBlockSize = errors.New("data must be multiple of block size")
+
+func newCrypterFunc(ciph cipherI, encrypter bool) objects.CallableFunc {
+	return func(args ...objects.Object) (objects.Object, error) {
+		if ciph.IVSize() > 0 {
+			if len(args) != 3 {
+				return nil, objects.ErrWrongNumArguments
+			}
+		} else {
+			if len(args) != 2 {
+				return nil, objects.ErrWrongNumArguments
+			}
+		}
+
+		data, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		if ciph.BlockSize() > 0 && len(data)%ciph.BlockSize() != 0 {
+			return nil, ErrDataMultipleBlockSize
+		}
+
+		key, ok := objects.ToByteSlice(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "key",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		var iv []byte
+
+		if ciph.IVSize() > 0 {
+			if len(args) > 2 {
+				iv, ok = objects.ToByteSlice(args[2])
+				if !ok {
+					return nil, objects.ErrInvalidArgumentType{
+						Name:     "iv",
+						Expected: "bytes",
+						Found:    args[0].TypeName(),
+					}
+				}
+				if len(iv) != ciph.IVSize() {
+					return nil, ErrIVSize
+				}
+			}
+		}
+
+		for _, l := range ciph.KeySizes() {
+			if l == len(key) {
+				if encrypter {
+					ciph.Encrypt(data, key, iv)
+				} else {
+					ciph.Decrypt(data, key, iv)
+				}
+
+				return &objects.Bytes{
+					Value: data,
+				}, nil
+			}
+		}
+
+		// probably unrecoverable
+		return nil, ErrKeySize
+	}
+}
+
 func registerHash(n string, newHash func() hash.Hash) {
 	cryptoModule[n] = &objects.UserFunction{Name: n, Value: newHashFunc(newHash, false)}
-	cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(newHash, true)}
+	cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(newHash, true)} // See #216
 	cryptoModule["hmac_"+n] = &objects.UserFunction{Name: "hmac_" + n, Value: newHMACFunc(hmacByHash(newHash), false)}
 	cryptoModule["hmac_"+n+"_hex"] = &objects.UserFunction{Name: "hmac_" + n + "_hex", Value: newHMACFunc(hmacByHash(newHash), true)}
 }
@@ -121,7 +385,6 @@ func newHMACFunc(newMac func(key []byte) hash.Hash, returnHex bool) objects.Call
 				Found:    args[0].TypeName(),
 			}
 		}
-
 
 		key, ok := objects.ToByteSlice(args[1])
 		if !ok {
