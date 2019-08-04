@@ -49,33 +49,18 @@ func TestCryptoModuleCipher(t *testing.T) {
 
 	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key, 1).expectError()
 	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1, ciphAES128Key, ciphPlain3).expectError()
-
-	module(t, `crypto`).call("rand_bytes").expectError()
-	module(t, `crypto`).call("rand_bytes", 1, 1).expectError()
-	module(t, `crypto`).call("rand_bytes", -1).expectError()
-	module(t, `crypto`).call("rand_bytes", &objects.Array{}).expectError()
-	o := module(t, `crypto`).call("rand_bytes", 8).o
-	bs, ok := o.(*objects.Bytes)
-	if !ok {
-		t.Errorf("crypto.rand_bytes(8) returns wrong type: %T", o)
-	} else if len(bs.Value) != 8 {
-		t.Errorf("crypto.rand_bytes(8) returns wrong length: %v", len(bs.Value))
-	}
 }
 
-func testCipherFunc(t *testing.T, alg, plain, key, iv, ciph string) {
+func testCipherFunc(t *testing.T, alg, plain, key, iv, ciphb64 string) {
 	t.Run(alg+"__"+plain, func(t *testing.T) {
-		module(t, `crypto`).call("encrypt_"+alg, plain, key, iv).expect(b64MustDecode(ciph))
-		module(t, `crypto`).call("decrypt_"+alg, b64MustDecode(ciph), key, iv).expect([]byte(plain))
-	})
-}
+		ciph, err := base64.StdEncoding.DecodeString(ciphb64)
+		if err != nil {
+			panic(err)
+		}
 
-func b64MustDecode(s string) []byte {
-	data, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		panic(err)
-	}
-	return data
+		module(t, `crypto`).call("encrypt_"+alg, plain, key, iv).expect(ciph)
+		module(t, `crypto`).call("decrypt_"+alg, ciph, key, iv).expect([]byte(plain))
+	})
 }
 
 const hashInp1 = "abc"
@@ -154,4 +139,45 @@ func testHashFunc(t *testing.T, alg string, inp, hexs, macKey, macHex string) {
 			module(t, `crypto`).call("hmac_"+alg, []byte(inp), []byte(macKey)).expect(macBys)
 		}
 	})
+}
+
+func testPadFunc(t *testing.T, alg string, unpadded string, padded []byte, l int) {
+	module(t, `crypto`).call("pad_" + alg, unpadded, l).expect(padded)
+	module(t, `crypto`).call("unpad_" + alg, padded, l).expect([]byte(unpadded))
+}
+
+func TestCryptoModuleUtilities(t *testing.T) {
+	testPadFunc(t, "pkcs7", "abc", []byte{'a', 'b', 'c', 0x02, 0x02}, 5)
+	testPadFunc(t, "pkcs7", "abcde", []byte{'a', 'b', 'c', 'd', 'e', 0x05, 0x05, 0x05, 0x05, 0x05}, 5)
+
+	module(t, `crypto`).call("pad_pkcs7").expectError()
+	module(t, `crypto`).call("pad_pkcs7", "abc", &objects.Array{}).expectError()
+	module(t, `crypto`).call("pad_pkcs7", &objects.Array{}, 5).expectError()
+	module(t, `crypto`).call("pad_pkcs7", "abc", 5, "d").expectError()
+	module(t, `crypto`).call("pad_pkcs7", "abc", 256).expectError()
+	module(t, `crypto`).call("pad_pkcs7", "abc", -1).expectError()
+
+	module(t, `crypto`).call("unpad_pkcs7").expectError()
+	module(t, `crypto`).call("unpad_pkcs7", "abc", &objects.Array{}).expectError()
+	module(t, `crypto`).call("unpad_pkcs7", &objects.Array{}, 5).expectError()
+	module(t, `crypto`).call("unpad_pkcs7", "abc", 5, "d").expectError()
+	module(t, `crypto`).call("unpad_pkcs7", "abc", 256).expectError()
+	module(t, `crypto`).call("unpad_pkcs7", "abc", -1).expectError()
+
+	module(t, `crypto`).call("unpad_pkcs7", "abc", 2).expectError()
+	module(t, `crypto`).call("unpad_pkcs7", "abc", 3).expect(stdlib.ErrMalformedPadding)
+	module(t, `crypto`).call("unpad_pkcs7", []byte{'a', 'b', 'c', 0x02, 0x03, 0x02}, 6).expect(stdlib.ErrMalformedPadding)
+	module(t, `crypto`).call("unpad_pkcs7", []byte{'a', 'b', 'c', 0x02, 0x02, 0x03}, 6).expect(stdlib.ErrMalformedPadding)
+
+	module(t, `crypto`).call("rand_bytes").expectError()
+	module(t, `crypto`).call("rand_bytes", 1, 1).expectError()
+	module(t, `crypto`).call("rand_bytes", -1).expectError()
+	module(t, `crypto`).call("rand_bytes", &objects.Array{}).expectError()
+	o := module(t, `crypto`).call("rand_bytes", 8).o
+	bs, ok := o.(*objects.Bytes)
+	if !ok {
+		t.Errorf("crypto.rand_bytes(8) returns wrong type: %T", o)
+	} else if len(bs.Value) != 8 {
+		t.Errorf("crypto.rand_bytes(8) returns wrong length: %v", len(bs.Value))
+	}
 }

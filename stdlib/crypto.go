@@ -1,6 +1,7 @@
 package stdlib
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
@@ -8,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/d5/tengo/objects"
 	"hash"
 	"strings"
@@ -17,7 +19,7 @@ var cryptoModule = make(
 	map[string]objects.Object,
 	len(hashNames)*4+ // # of hashes
 		1*4*2+ // # of block ciphers
-		1, // # of utilities
+		3, // # of utilities
 )
 
 // TODO [crypto](https://github.com/d5/tengo/blob/master/docs/stdlib-crypto.md): cryptographic functions like hashes and ciphers
@@ -25,6 +27,8 @@ var cryptoModule = make(
 // TODO paddings for CBC PKCS#7
 // TODO x509
 // TODO asymmetric ciphers
+
+var ErrMalformedPadding = &objects.Error{Value: &objects.String{Value: fmt.Sprintf("malformed padding")}}
 
 func init() {
 	ReloadCryptoAlgorithms()
@@ -41,7 +45,83 @@ func init() {
 			return c
 		},
 	})
-	cryptoModule["rand_bytes"] = &objects.UserFunction{Name: "randBytes", Value: func(args ...objects.Object) (objects.Object, error) {
+	cryptoModule["pad_pkcs7"] = &objects.UserFunction{Name: "pad_pkcs7", Value: func(args ...objects.Object) (objects.Object, error) {
+		if len(args) != 2 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		data, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		l, ok := objects.ToInt(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "length",
+				Expected: "int",
+				Found:    args[1].TypeName(),
+			}
+		}
+
+		if l <= 0 || l > 255 {
+			return nil, objects.ErrIndexOutOfBounds
+		}
+
+		padLen := l - (len(data) % l)
+		return &objects.Bytes{Value: append(data, bytes.Repeat([]byte{byte(padLen)}, padLen)...)}, nil
+	}}
+	cryptoModule["unpad_pkcs7"] = &objects.UserFunction{Name: "pad_pkcs7", Value: func(args ...objects.Object) (objects.Object, error) {
+		if len(args) != 2 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		data, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		l, ok := objects.ToInt(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "length",
+				Expected: "int",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		if l <= 0 || l > 255 {
+			return nil, objects.ErrIndexOutOfBounds
+		}
+
+		if len(data) % l != 0 {
+			return nil, ErrDataMultipleBlockSize
+		}
+
+		padLen := int(data[len(data)-1])
+
+		if padLen >= len(data) {
+			return ErrMalformedPadding, nil
+		}
+
+		for _, el := range data[len(data)-padLen:] {
+			if el != byte(padLen) {
+				// recoverable error
+				return ErrMalformedPadding, nil
+			}
+		}
+
+		return &objects.Bytes{Value: data[:len(data)-padLen]}, nil
+	}}
+	cryptoModule["rand_bytes"] = &objects.UserFunction{Name: "rand_bytes", Value: func(args ...objects.Object) (objects.Object, error) {
 		if len(args) != 1 {
 			return nil, objects.ErrWrongNumArguments
 		}
