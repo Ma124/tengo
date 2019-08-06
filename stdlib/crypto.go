@@ -22,7 +22,6 @@ var cryptoModule = make(
 		3, // # of utilities
 )
 
-// TODO [crypto](https://github.com/d5/tengo/blob/master/docs/stdlib-crypto.md): cryptographic functions like hashes and ciphers
 // TODO keyderiv
 // TODO asymmetric ciphers
 
@@ -139,7 +138,7 @@ func unpadPKCS7(args ...objects.Object) (objects.Object, error) {
 		return nil, objects.ErrInvalidArgumentType{
 			Name:     "length",
 			Expected: "int",
-			Found:    args[0].TypeName(),
+			Found:    args[1].TypeName(),
 		}
 	}
 
@@ -148,7 +147,7 @@ func unpadPKCS7(args ...objects.Object) (objects.Object, error) {
 	}
 
 	if len(data)%l != 0 {
-		return nil, ErrDataMultipleBlockSize
+		return ErrMalformedPadding, nil
 	}
 
 	padLen := int(data[len(data)-1])
@@ -327,7 +326,7 @@ func newAEADCrypterFunc(newCipher func(key []byte) cipher.AEAD, keySizes []int, 
 			return nil, objects.ErrInvalidArgumentType{
 				Name:     "key",
 				Expected: "bytes",
-				Found:    args[0].TypeName(),
+				Found:    args[1].TypeName(),
 			}
 		}
 
@@ -348,7 +347,7 @@ func newAEADCrypterFunc(newCipher func(key []byte) cipher.AEAD, keySizes []int, 
 			return nil, objects.ErrInvalidArgumentType{
 				Name:     "iv",
 				Expected: "bytes",
-				Found:    args[0].TypeName(),
+				Found:    args[2].TypeName(),
 			}
 		}
 		if len(iv) != ciph.NonceSize() {

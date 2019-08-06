@@ -47,6 +47,8 @@ func TestCryptoModuleCipher(t *testing.T) {
 	testAEADCipherFunc(t, "aes_gcm", ciphPlain2, ciphAES128Key, ciphGCMIV, ciphGCMAddData, "QleTk7HbyIUPSRcgzWYSQjlXab3dMWM=")
 	testAEADCipherFunc(t, "aes_gcm", ciphPlain3, ciphAES128Key, ciphGCMIV, ciphGCMAddData, "QleTk7HbyN6dMkD2E/IEHp13RZMQGaBSmhVgKgec7wUWNClkXroBhghkRaUUX+4xkI3RgyPilA==")
 
+	module(t, `crypto`).call("open_aes_gcm", "QleTk7HbyN6dMkD2E/IEHp13RZMQGaBSmhVgKgec7wUWNClkXroBhghkRaUUX+4xkI3RgyPilA==", ciphAES128Key, ciphGCMIV).expect(&objects.Error{Value: &objects.String{Value: "cipher: message authentication failed"}})
+
 	t.Run("seal_arg_count", func(t *testing.T) {
 		module(t, `crypto`).call("seal_aes_gcm").expectError()
 		module(t, `crypto`).call("seal_aes_gcm", ciphPlain1).expectError()
@@ -231,7 +233,7 @@ func TestCryptoModuleUtilities(t *testing.T) {
 	})
 
 	t.Run("unpad_pkcs7_malformed_padding", func(t *testing.T) {
-		module(t, `crypto`).call("unpad_pkcs7", "abc", 2).expectError()
+		module(t, `crypto`).call("unpad_pkcs7", "abc", 2).expect(stdlib.ErrMalformedPadding)
 		module(t, `crypto`).call("unpad_pkcs7", "abc", 3).expect(stdlib.ErrMalformedPadding)
 		module(t, `crypto`).call("unpad_pkcs7", []byte{'a', 'b', 'c', 0x02, 0x03, 0x02}, 6).expect(stdlib.ErrMalformedPadding)
 		module(t, `crypto`).call("unpad_pkcs7", []byte{'a', 'b', 'c', 0x02, 0x02, 0x03}, 6).expect(stdlib.ErrMalformedPadding)
