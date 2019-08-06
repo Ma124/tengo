@@ -100,7 +100,7 @@ func init() {
 			return nil, objects.ErrIndexOutOfBounds
 		}
 
-		if len(data) % l != 0 {
+		if len(data)%l != 0 {
 			return nil, ErrDataMultipleBlockSize
 		}
 
