@@ -13,6 +13,8 @@ import (
 // len(ciphAESIV) == AESBlockSize == 16
 const ciphAESIV = "1234567890123456"
 
+const ciphGCMIV = "123456789012"
+
 // len(ciphAES128Key) == AES128KeySize == 16
 const ciphAES128Key = "6543210987654321"
 
@@ -25,6 +27,8 @@ const ciphPlain2 = "abcdefg"
 // len(ciphPlain3) == (AESBlockSize * 2) + ((AESBlockSize/2)-1)
 const ciphPlain3 = "abcdefghijklmnopabcdefghijklmnopabcdefg"
 
+const ciphGCMAddData = "cba"
+
 func TestCryptoModuleCipher(t *testing.T) {
 	testCipherFunc(t, "aes_cbc", ciphPlain1, ciphAES128Key, ciphAESIV, "L+BfSsDnX1I1eiSWDxxg3Q==")
 
@@ -35,6 +39,13 @@ func TestCryptoModuleCipher(t *testing.T) {
 	testCipherFunc(t, "aes_ofb", ciphPlain1, ciphAES128Key, ciphAESIV, "9Tv9rHveyjeO4a/6UDoRdQ==")
 	testCipherFunc(t, "aes_ofb", ciphPlain2, ciphAES128Key, ciphAESIV, "9Tv9rHveyg==")
 	testCipherFunc(t, "aes_ofb", ciphPlain3, ciphAES128Key, ciphAESIV, "9Tv9rHveyjeO4a/6UDoRdZ0leQQ8Z40RCwkMEr5igiBFUdFvJe/C")
+
+	testAEADCipherFunc(t, "aes_gcm", ciphPlain1, ciphAES128Key, ciphGCMIV, "", "QleTk7HbyN6dMkD2E/IEHjQhskX/7Q6AbTjPAgMmDJA=")
+	testAEADCipherFunc(t, "aes_gcm", ciphPlain2, ciphAES128Key, ciphGCMIV, "", "QleTk7HbyKKhLk/TdCbgo6LdtiBxMvw=")
+	testAEADCipherFunc(t, "aes_gcm", ciphPlain3, ciphAES128Key, ciphGCMIV, "", "QleTk7HbyN6dMkD2E/IEHp13RZMQGaBSmhVgKgec7wUWNClkXroBpkIE+7Td8OAb0PkXDkA0Yw==")
+	testAEADCipherFunc(t, "aes_gcm", ciphPlain1, ciphAES128Key, ciphGCMIV, ciphGCMAddData, "QleTk7HbyN6dMkD2E/IEHhOP1R0MVE5yjKNF3Z6KDw8=")
+	testAEADCipherFunc(t, "aes_gcm", ciphPlain2, ciphAES128Key, ciphGCMIV, ciphGCMAddData, "QleTk7HbyIUPSRcgzWYSQjlXab3dMWM=")
+	testAEADCipherFunc(t, "aes_gcm", ciphPlain3, ciphAES128Key, ciphGCMIV, ciphGCMAddData, "QleTk7HbyN6dMkD2E/IEHp13RZMQGaBSmhVgKgec7wUWNClkXroBhghkRaUUX+4xkI3RgyPilA==")
 
 	module(t, `crypto`).call("encrypt_aes_cbc").expectError()
 	module(t, `crypto`).call("encrypt_aes_cbc", ciphPlain1).expectError()
@@ -60,6 +71,26 @@ func testCipherFunc(t *testing.T, alg, plain, key, iv, ciphb64 string) {
 
 		module(t, `crypto`).call("encrypt_"+alg, plain, key, iv).expect(ciph)
 		module(t, `crypto`).call("decrypt_"+alg, ciph, key, iv).expect([]byte(plain))
+	})
+}
+
+func testAEADCipherFunc(t *testing.T, alg, plain, key, iv, addData, ciphb64 string) {
+	t.Run(alg+"__"+plain, func(t *testing.T) {
+		ciph, err := base64.StdEncoding.DecodeString(ciphb64)
+		if err != nil {
+			panic(err)
+		}
+
+		args := []interface{}{plain, key, iv}
+		if addData != "" {
+			args = append(args, addData)
+		}
+		module(t, `crypto`).call("seal_"+alg, args...).expect(ciph)
+		args = []interface{}{ciph, key, iv}
+		if addData != "" {
+			args = append(args, addData)
+		}
+		module(t, `crypto`).call("open_"+alg, args...).expect([]byte(plain))
 	})
 }
 
