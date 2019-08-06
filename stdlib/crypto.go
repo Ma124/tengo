@@ -27,6 +27,31 @@ var cryptoModule = make(
 // TODO asymmetric ciphers
 
 var ErrMalformedPadding = &objects.Error{Value: &objects.String{Value: fmt.Sprintf("malformed padding")}}
+var ErrKeySize = errors.New("invalid key size")
+var ErrIVSize = errors.New("invalid iv size")
+var ErrDataMultipleBlockSize = errors.New("data must be multiple of block size")
+
+var hashNames = map[crypto.Hash]string{
+	crypto.MD4:         "MD4",
+	crypto.MD5:         "MD5",
+	crypto.SHA1:        "SHA1",
+	crypto.SHA224:      "SHA224",
+	crypto.SHA256:      "SHA256",
+	crypto.SHA384:      "SHA384",
+	crypto.SHA512:      "SHA512",
+	crypto.MD5SHA1:     "MD5SHA1",
+	crypto.RIPEMD160:   "RIPEMD160",
+	crypto.SHA3_224:    "SHA3_224",
+	crypto.SHA3_256:    "SHA3_256",
+	crypto.SHA3_384:    "SHA3_384",
+	crypto.SHA3_512:    "SHA3_512",
+	crypto.SHA512_224:  "SHA512_224",
+	crypto.SHA512_256:  "SHA512_256",
+	crypto.BLAKE2s_256: "BLAKE2s_256",
+	crypto.BLAKE2b_256: "BLAKE2b_256",
+	crypto.BLAKE2b_384: "BLAKE2b_384",
+	crypto.BLAKE2b_512: "BLAKE2b_512",
+}
 
 func init() {
 	ReloadCryptoAlgorithms()
@@ -43,108 +68,9 @@ func init() {
 			return c
 		},
 	})
-	cryptoModule["pad_pkcs7"] = &objects.UserFunction{Name: "pad_pkcs7", Value: func(args ...objects.Object) (objects.Object, error) {
-		if len(args) != 2 {
-			return nil, objects.ErrWrongNumArguments
-		}
-
-		data, ok := objects.ToByteSlice(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "data",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		l, ok := objects.ToInt(args[1])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "length",
-				Expected: "int",
-				Found:    args[1].TypeName(),
-			}
-		}
-
-		if l <= 0 || l > 255 {
-			return nil, objects.ErrIndexOutOfBounds
-		}
-
-		padLen := l - (len(data) % l)
-		return &objects.Bytes{Value: append(data, bytes.Repeat([]byte{byte(padLen)}, padLen)...)}, nil
-	}}
-	cryptoModule["unpad_pkcs7"] = &objects.UserFunction{Name: "pad_pkcs7", Value: func(args ...objects.Object) (objects.Object, error) {
-		if len(args) != 2 {
-			return nil, objects.ErrWrongNumArguments
-		}
-
-		data, ok := objects.ToByteSlice(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "data",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		l, ok := objects.ToInt(args[1])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "length",
-				Expected: "int",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		if l <= 0 || l > 255 {
-			return nil, objects.ErrIndexOutOfBounds
-		}
-
-		if len(data)%l != 0 {
-			return nil, ErrDataMultipleBlockSize
-		}
-
-		padLen := int(data[len(data)-1])
-
-		if padLen >= len(data) {
-			return ErrMalformedPadding, nil
-		}
-
-		for _, el := range data[len(data)-padLen:] {
-			if el != byte(padLen) {
-				// recoverable error
-				return ErrMalformedPadding, nil
-			}
-		}
-
-		return &objects.Bytes{Value: data[:len(data)-padLen]}, nil
-	}}
-	cryptoModule["rand_bytes"] = &objects.UserFunction{Name: "rand_bytes", Value: func(args ...objects.Object) (objects.Object, error) {
-		if len(args) != 1 {
-			return nil, objects.ErrWrongNumArguments
-		}
-
-		l, ok := objects.ToInt(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "length",
-				Expected: "int",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		if l < 0 {
-			return nil, objects.ErrIndexOutOfBounds
-		}
-
-		bs := make([]byte, l)
-		_, err := rand.Read(bs)
-		if err != nil {
-			return nil, err
-		}
-
-		return &objects.Bytes{Value: bs}, nil
-	}}
+	cryptoModule["pad_pkcs7"] = &objects.UserFunction{Name: "pad_pkcs7", Value: padPKCS7}
+	cryptoModule["unpad_pkcs7"] = &objects.UserFunction{Name: "unpad_pkcs7", Value: unpadPKCS7}
+	cryptoModule["rand_bytes"] = &objects.UserFunction{Name: "rand_bytes", Value: randBytes}
 }
 
 func ReloadCryptoAlgorithms() {
@@ -160,6 +86,388 @@ func ReloadCryptoAlgorithms() {
 		}
 
 		registerHash(n, h.New)
+	}
+}
+
+func padPKCS7(args ...objects.Object) (objects.Object, error) {
+	if len(args) != 2 {
+		return nil, objects.ErrWrongNumArguments
+	}
+
+	data, ok := objects.ToByteSlice(args[0])
+	if !ok {
+		return nil, objects.ErrInvalidArgumentType{
+			Name:     "data",
+			Expected: "bytes",
+			Found:    args[0].TypeName(),
+		}
+	}
+
+	l, ok := objects.ToInt(args[1])
+	if !ok {
+		return nil, objects.ErrInvalidArgumentType{
+			Name:     "length",
+			Expected: "int",
+			Found:    args[1].TypeName(),
+		}
+	}
+
+	if l <= 0 || l > 255 {
+		return nil, objects.ErrIndexOutOfBounds
+	}
+
+	padLen := l - (len(data) % l)
+	return &objects.Bytes{Value: append(data, bytes.Repeat([]byte{byte(padLen)}, padLen)...)}, nil
+}
+
+func unpadPKCS7(args ...objects.Object) (objects.Object, error) {
+	if len(args) != 2 {
+		return nil, objects.ErrWrongNumArguments
+	}
+
+	data, ok := objects.ToByteSlice(args[0])
+	if !ok {
+		return nil, objects.ErrInvalidArgumentType{
+			Name:     "data",
+			Expected: "bytes",
+			Found:    args[0].TypeName(),
+		}
+	}
+
+	l, ok := objects.ToInt(args[1])
+	if !ok {
+		return nil, objects.ErrInvalidArgumentType{
+			Name:     "length",
+			Expected: "int",
+			Found:    args[0].TypeName(),
+		}
+	}
+
+	if l <= 0 || l > 255 {
+		return nil, objects.ErrIndexOutOfBounds
+	}
+
+	if len(data)%l != 0 {
+		return nil, ErrDataMultipleBlockSize
+	}
+
+	padLen := int(data[len(data)-1])
+
+	if padLen >= len(data) {
+		return ErrMalformedPadding, nil
+	}
+
+	for _, el := range data[len(data)-padLen:] {
+		if el != byte(padLen) {
+			// recoverable error
+			return ErrMalformedPadding, nil
+		}
+	}
+
+	return &objects.Bytes{Value: data[:len(data)-padLen]}, nil
+}
+
+func randBytes(args ...objects.Object) (objects.Object, error) {
+	if len(args) != 1 {
+		return nil, objects.ErrWrongNumArguments
+	}
+
+	l, ok := objects.ToInt(args[0])
+	if !ok {
+		return nil, objects.ErrInvalidArgumentType{
+			Name:     "length",
+			Expected: "int",
+			Found:    args[0].TypeName(),
+		}
+	}
+
+	if l < 0 {
+		return nil, objects.ErrIndexOutOfBounds
+	}
+
+	bs := make([]byte, l)
+	_, err := rand.Read(bs)
+	if err != nil {
+		return nil, err
+	}
+
+	return &objects.Bytes{Value: bs}, nil
+}
+
+func registerBlockCipher(ciph *blockCiph) {
+	registerCipherFuncs(ciph.Name()+"_cbc", &blockModeCiph{
+		Cipher:       ciph,
+		NewEncrypter: cipher.NewCBCEncrypter,
+		NewDecrypter: cipher.NewCBCDecrypter,
+	})
+	registerCipherFuncs(ciph.Name()+"_ctr", &streamCiph{
+		MName: ciph.Name(),
+		NewEncStream: func(key, iv []byte) cipher.Stream {
+			return cipher.NewCTR(ciph.NewBlock(key), iv)
+		},
+		MKeySizes: ciph.KeySizes(),
+		MIVSize:   ciph.MBlockSize,
+	})
+	registerCipherFuncs(ciph.Name()+"_ofb", &streamCiph{
+		MName: ciph.Name(),
+		NewEncStream: func(key, iv []byte) cipher.Stream {
+			return cipher.NewOFB(ciph.NewBlock(key), iv)
+		},
+		MKeySizes: ciph.KeySizes(),
+		MIVSize:   ciph.MBlockSize,
+	})
+	if ciph.BlockSize() == 16 {
+		registerAEAD(ciph.Name()+"_gcm", func(key []byte) cipher.AEAD {
+			gcm, err := cipher.NewGCM(ciph.NewBlock(key))
+			if err != nil {
+				// Will never occur
+				panic(err)
+			}
+			return gcm
+		}, ciph.KeySizes())
+	}
+}
+
+func registerCipherFuncs(n string, ciph cipherI) {
+	cryptoModule["encrypt_"+n] = &objects.UserFunction{Name: "encrypt_" + n, Value: newCrypterFunc(ciph, true)}
+	cryptoModule["decrypt_"+n] = &objects.UserFunction{Name: "decrypt_" + n, Value: newCrypterFunc(ciph, false)}
+}
+
+func registerAEAD(n string, newCipher func(key []byte) cipher.AEAD, keySizes []int) {
+	cryptoModule["seal_"+n] = &objects.UserFunction{Name: "seal_" + n, Value: newAEADCrypterFunc(newCipher, keySizes, true)}
+	cryptoModule["open_"+n] = &objects.UserFunction{Name: "open_" + n, Value: newAEADCrypterFunc(newCipher, keySizes, false)}
+}
+
+func newCrypterFunc(ciph cipherI, encrypter bool) objects.CallableFunc {
+	return func(args ...objects.Object) (objects.Object, error) {
+		if ciph.IVSize() > 0 {
+			if len(args) != 3 {
+				return nil, objects.ErrWrongNumArguments
+			}
+		} else {
+			if len(args) != 2 {
+				return nil, objects.ErrWrongNumArguments
+			}
+		}
+
+		data, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		if ciph.BlockSize() > 0 && len(data)%ciph.BlockSize() != 0 {
+			return nil, ErrDataMultipleBlockSize
+		}
+
+		key, ok := objects.ToByteSlice(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "key",
+				Expected: "bytes",
+				Found:    args[1].TypeName(),
+			}
+		}
+
+		var iv []byte
+
+		if ciph.IVSize() > 0 {
+			iv, ok = objects.ToByteSlice(args[2])
+			if !ok {
+				return nil, objects.ErrInvalidArgumentType{
+					Name:     "iv",
+					Expected: "bytes",
+					Found:    args[2].TypeName(),
+				}
+			}
+			if len(iv) != ciph.IVSize() {
+				return nil, ErrIVSize
+			}
+		}
+
+		for _, l := range ciph.KeySizes() {
+			if l == len(key) {
+				if encrypter {
+					ciph.Encrypt(data, key, iv)
+				} else {
+					ciph.Decrypt(data, key, iv)
+				}
+
+				return &objects.Bytes{
+					Value: data,
+				}, nil
+			}
+		}
+
+		// probably unrecoverable
+		return nil, ErrKeySize
+	}
+}
+
+func newAEADCrypterFunc(newCipher func(key []byte) cipher.AEAD, keySizes []int, encrypter bool) objects.CallableFunc {
+	return func(args ...objects.Object) (ret objects.Object, err error) {
+		if len(args) < 3 || len(args) > 4 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		data, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		key, ok := objects.ToByteSlice(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "key",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		var ciph cipher.AEAD
+
+		for _, l := range keySizes {
+			if l == len(key) {
+				ciph = newCipher(key)
+			}
+		}
+
+		if ciph == nil {
+			return nil, ErrKeySize
+		}
+
+		iv, ok := objects.ToByteSlice(args[2])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "iv",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+		if len(iv) != ciph.NonceSize() {
+			return nil, ErrIVSize
+		}
+
+		var addData []byte
+		if len(args) == 4 {
+			addData, ok = objects.ToByteSlice(args[3])
+			if !ok {
+				return nil, objects.ErrInvalidArgumentType{
+					Name:     "additional_data",
+					Expected: "bytes",
+					Found:    args[3].TypeName(),
+				}
+			}
+		}
+
+		if encrypter {
+			data = ciph.Seal(data[:0], iv, data, addData)
+			return &objects.Bytes{Value: data}, nil
+		} else {
+			data, err = ciph.Open(data[:0], iv, data, addData)
+			if err != nil {
+				return wrapError(err), nil
+			}
+			return &objects.Bytes{Value: data}, nil
+		}
+
+	}
+}
+
+func registerHash(n string, newHash func() hash.Hash) {
+	cryptoModule[n] = &objects.UserFunction{Name: n, Value: newHashFunc(newHash, false)}
+	cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(newHash, true)} // See #216
+	cryptoModule["hmac_"+n] = &objects.UserFunction{Name: "hmac_" + n, Value: newHMACFunc(hmacByHash(newHash), false)}
+	cryptoModule["hmac_"+n+"_hex"] = &objects.UserFunction{Name: "hmac_" + n + "_hex", Value: newHMACFunc(hmacByHash(newHash), true)}
+}
+
+func hmacByHash(newHash func() hash.Hash) func(key []byte) hash.Hash {
+	return func(key []byte) hash.Hash {
+		return hmac.New(newHash, key)
+	}
+}
+
+func newHashFunc(newHash func() hash.Hash, returnHex bool) objects.CallableFunc {
+	return func(args ...objects.Object) (objects.Object, error) {
+		if len(args) != 1 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		inp, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		h := newHash()
+		h.Write(inp)
+
+		out := make([]byte, 0, h.Size())
+
+		out = h.Sum(out)
+
+		if returnHex {
+			return &objects.String{
+				Value: hex.EncodeToString(out),
+			}, nil
+		} else {
+			return &objects.Bytes{
+				Value: out,
+			}, nil
+		}
+	}
+}
+
+func newHMACFunc(newMac func(key []byte) hash.Hash, returnHex bool) objects.CallableFunc {
+	return func(args ...objects.Object) (objects.Object, error) {
+		if len(args) != 2 {
+			return nil, objects.ErrWrongNumArguments
+		}
+
+		inp, ok := objects.ToByteSlice(args[0])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "data",
+				Expected: "bytes",
+				Found:    args[0].TypeName(),
+			}
+		}
+
+		key, ok := objects.ToByteSlice(args[1])
+		if !ok {
+			return nil, objects.ErrInvalidArgumentType{
+				Name:     "key",
+				Expected: "bytes",
+				Found:    args[1].TypeName(),
+			}
+		}
+
+		h := newMac(key)
+		h.Write(inp)
+
+		out := make([]byte, 0, h.Size())
+
+		out = h.Sum(out)
+
+		if returnHex {
+			return &objects.String{
+				Value: hex.EncodeToString(out),
+			}, nil
+		} else {
+			return &objects.Bytes{
+				Value: out,
+			}, nil
+		}
 	}
 }
 
@@ -273,307 +581,4 @@ func (c *streamCiph) Decrypt(data, key, iv []byte) {
 		return
 	}
 	c.NewDecStream(key, iv).XORKeyStream(data, data)
-}
-
-func registerBlockCipher(ciph *blockCiph) {
-	registerBlockCipherFuncs(ciph.Name()+"_cbc", &blockModeCiph{
-		Cipher:       ciph,
-		NewEncrypter: cipher.NewCBCEncrypter,
-		NewDecrypter: cipher.NewCBCDecrypter,
-	})
-	registerBlockCipherFuncs(ciph.Name()+"_ctr", &streamCiph{
-		MName: ciph.Name(),
-		NewEncStream: func(key, iv []byte) cipher.Stream {
-			return cipher.NewCTR(ciph.NewBlock(key), iv)
-		},
-		MKeySizes: ciph.KeySizes(),
-		MIVSize:   ciph.MBlockSize,
-	})
-	registerBlockCipherFuncs(ciph.Name()+"_ofb", &streamCiph{
-		MName: ciph.Name(),
-		NewEncStream: func(key, iv []byte) cipher.Stream {
-			return cipher.NewOFB(ciph.NewBlock(key), iv)
-		},
-		MKeySizes: ciph.KeySizes(),
-		MIVSize:   ciph.MBlockSize,
-	})
-	if ciph.BlockSize() == 16 {
-		registerAEAD(ciph.Name()+"_gcm", func(key []byte) cipher.AEAD {
-			gcm, err := cipher.NewGCM(ciph.NewBlock(key))
-			if err != nil {
-				// Will never occur
-				panic(err)
-			}
-			return gcm
-		}, ciph.KeySizes())
-	}
-}
-
-func registerBlockCipherFuncs(n string, ciph cipherI) {
-	cryptoModule["encrypt_"+n] = &objects.UserFunction{Name: "encrypt_" + n, Value: newCrypterFunc(ciph, true)}
-	cryptoModule["decrypt_"+n] = &objects.UserFunction{Name: "decrypt_" + n, Value: newCrypterFunc(ciph, false)}
-}
-
-func registerAEAD(n string, newCipher func(key []byte) cipher.AEAD, keySizes []int) {
-	cryptoModule["seal_"+n] = &objects.UserFunction{Name: "seal_" + n, Value: newAEADCrypterFunc(newCipher, keySizes, true)}
-	cryptoModule["open_"+n] = &objects.UserFunction{Name: "open_" + n, Value: newAEADCrypterFunc(newCipher, keySizes, false)}
-}
-
-var ErrKeySize = errors.New("invalid key size")
-var ErrIVSize = errors.New("invalid iv size")
-var ErrDataMultipleBlockSize = errors.New("data must be multiple of block size")
-
-func newAEADCrypterFunc(newCipher func(key []byte) cipher.AEAD, keySizes []int, encrypter bool) objects.CallableFunc {
-	return func(args ...objects.Object) (ret objects.Object, err error) {
-		if len(args) < 3 || len(args) > 4 {
-			return nil, objects.ErrWrongNumArguments
-		}
-
-		data, ok := objects.ToByteSlice(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "data",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		key, ok := objects.ToByteSlice(args[1])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "key",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		var ciph cipher.AEAD
-
-		for _, l := range keySizes {
-			if l == len(key) {
-				ciph = newCipher(key)
-			}
-		}
-
-		if ciph == nil {
-			return nil, ErrKeySize
-		}
-
-		iv, ok := objects.ToByteSlice(args[2])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "iv",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-		if len(iv) != ciph.NonceSize() {
-			return nil, ErrIVSize
-		}
-
-		var addData []byte
-		if len(args) == 4 {
-			addData, ok = objects.ToByteSlice(args[3])
-			if !ok {
-				return nil, objects.ErrInvalidArgumentType{
-					Name:     "additional_data",
-					Expected: "bytes",
-					Found:    args[3].TypeName(),
-				}
-			}
-		}
-
-		if encrypter {
-			data = ciph.Seal(data[:0], iv, data, addData)
-			return &objects.Bytes{Value: data}, nil
-		} else {
-			data, err = ciph.Open(data[:0], iv, data, addData)
-			if err != nil {
-				return wrapError(err), nil
-			}
-			return &objects.Bytes{Value: data}, nil
-		}
-
-	}
-}
-func newCrypterFunc(ciph cipherI, encrypter bool) objects.CallableFunc {
-	return func(args ...objects.Object) (objects.Object, error) {
-		if ciph.IVSize() > 0 {
-			if len(args) != 3 {
-				return nil, objects.ErrWrongNumArguments
-			}
-		} else {
-			if len(args) != 2 {
-				return nil, objects.ErrWrongNumArguments
-			}
-		}
-
-		data, ok := objects.ToByteSlice(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "data",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		if ciph.BlockSize() > 0 && len(data)%ciph.BlockSize() != 0 {
-			return nil, ErrDataMultipleBlockSize
-		}
-
-		key, ok := objects.ToByteSlice(args[1])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "key",
-				Expected: "bytes",
-				Found:    args[1].TypeName(),
-			}
-		}
-
-		var iv []byte
-
-		if ciph.IVSize() > 0 {
-			iv, ok = objects.ToByteSlice(args[2])
-			if !ok {
-				return nil, objects.ErrInvalidArgumentType{
-					Name:     "iv",
-					Expected: "bytes",
-					Found:    args[2].TypeName(),
-				}
-			}
-			if len(iv) != ciph.IVSize() {
-				return nil, ErrIVSize
-			}
-		}
-
-		for _, l := range ciph.KeySizes() {
-			if l == len(key) {
-				if encrypter {
-					ciph.Encrypt(data, key, iv)
-				} else {
-					ciph.Decrypt(data, key, iv)
-				}
-
-				return &objects.Bytes{
-					Value: data,
-				}, nil
-			}
-		}
-
-		// probably unrecoverable
-		return nil, ErrKeySize
-	}
-}
-
-func registerHash(n string, newHash func() hash.Hash) {
-	cryptoModule[n] = &objects.UserFunction{Name: n, Value: newHashFunc(newHash, false)}
-	cryptoModule[n+"_hex"] = &objects.UserFunction{Name: n + "_hex", Value: newHashFunc(newHash, true)} // See #216
-	cryptoModule["hmac_"+n] = &objects.UserFunction{Name: "hmac_" + n, Value: newHMACFunc(hmacByHash(newHash), false)}
-	cryptoModule["hmac_"+n+"_hex"] = &objects.UserFunction{Name: "hmac_" + n + "_hex", Value: newHMACFunc(hmacByHash(newHash), true)}
-}
-
-func hmacByHash(newHash func() hash.Hash) func(key []byte) hash.Hash {
-	return func(key []byte) hash.Hash {
-		return hmac.New(newHash, key)
-	}
-}
-
-// vim command for generation from buffer with newline separated entries: %s/\v^(\w+)$/crypto.\1: "\1",/g
-var hashNames = map[crypto.Hash]string{
-	crypto.MD4:         "MD4",
-	crypto.MD5:         "MD5",
-	crypto.SHA1:        "SHA1",
-	crypto.SHA224:      "SHA224",
-	crypto.SHA256:      "SHA256",
-	crypto.SHA384:      "SHA384",
-	crypto.SHA512:      "SHA512",
-	crypto.MD5SHA1:     "MD5SHA1",
-	crypto.RIPEMD160:   "RIPEMD160",
-	crypto.SHA3_224:    "SHA3_224",
-	crypto.SHA3_256:    "SHA3_256",
-	crypto.SHA3_384:    "SHA3_384",
-	crypto.SHA3_512:    "SHA3_512",
-	crypto.SHA512_224:  "SHA512_224",
-	crypto.SHA512_256:  "SHA512_256",
-	crypto.BLAKE2s_256: "BLAKE2s_256",
-	crypto.BLAKE2b_256: "BLAKE2b_256",
-	crypto.BLAKE2b_384: "BLAKE2b_384",
-	crypto.BLAKE2b_512: "BLAKE2b_512",
-}
-
-func newHashFunc(newHash func() hash.Hash, returnHex bool) objects.CallableFunc {
-	return func(args ...objects.Object) (objects.Object, error) {
-		if len(args) != 1 {
-			return nil, objects.ErrWrongNumArguments
-		}
-
-		inp, ok := objects.ToByteSlice(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "data",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		h := newHash()
-		h.Write(inp)
-
-		out := make([]byte, 0, h.Size())
-
-		out = h.Sum(out)
-
-		if returnHex {
-			return &objects.String{
-				Value: hex.EncodeToString(out),
-			}, nil
-		} else {
-			return &objects.Bytes{
-				Value: out,
-			}, nil
-		}
-	}
-}
-
-func newHMACFunc(newMac func(key []byte) hash.Hash, returnHex bool) objects.CallableFunc {
-	return func(args ...objects.Object) (objects.Object, error) {
-		if len(args) != 2 {
-			return nil, objects.ErrWrongNumArguments
-		}
-
-		inp, ok := objects.ToByteSlice(args[0])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "data",
-				Expected: "bytes",
-				Found:    args[0].TypeName(),
-			}
-		}
-
-		key, ok := objects.ToByteSlice(args[1])
-		if !ok {
-			return nil, objects.ErrInvalidArgumentType{
-				Name:     "key",
-				Expected: "bytes",
-				Found:    args[1].TypeName(),
-			}
-		}
-
-		h := newMac(key)
-		h.Write(inp)
-
-		out := make([]byte, 0, h.Size())
-
-		out = h.Sum(out)
-
-		if returnHex {
-			return &objects.String{
-				Value: hex.EncodeToString(out),
-			}, nil
-		} else {
-			return &objects.Bytes{
-				Value: out,
-			}, nil
-		}
-	}
 }
