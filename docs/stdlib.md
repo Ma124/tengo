@@ -8,3 +8,4 @@
 - [fmt](https://github.com/d5/tengo/blob/master/docs/stdlib-fmt.md): formatting functions
 - [json](https://github.com/d5/tengo/blob/master/docs/stdlib-json.md): JSON functions
 - [enum](https://github.com/d5/tengo/blob/master/docs/stdlib-enum.md): Enumeration functions
+- [crypto](https://github.com/d5/tengo/blob/master/docs/stdlib-crypto.md): cryptographic functions like hashes and ciphers

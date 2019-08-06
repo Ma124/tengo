@@ -1,0 +1,93 @@
+# Module - "crypto"
+
+```golang
+fmt := import("crypto")
+```
+
+## Functions
+
+- `pad_pkcs7(data, len) => bytes`: pads the data to the given length using the padding specified in PKCS#7 (sometimes also referred to as PKCS#5 padding)
+- `unpad_pkcs7(data) => bytes`: unpads the data using the padding specified in PKCS#7 (sometimes also referred to as PKCS#5 padding)
+- `rand_bytes(len) => bytes`: returns cryptographically secure random bytes with the given length
+- `encrypt_aes_cbc(plaintext, key, iv) => bytes`: encrypts the plain text with the given key and iv using aes in cbc mode
+- `encrypt_aes_ctr(plaintext, key, iv) => bytes`: encrypts the plain text with the given key and iv using aes in ctr mode
+- `encrypt_aes_ofb(plaintext, key, iv) => bytes`: encrypts the plain text with the given key and iv using aes in ofb mode
+- `decrypt_aes_cbc(plaintext, key, iv) => bytes`: decrypts the cipher text with the given key and iv using aes in cbc mode
+- `decrypt_aes_ctr(plaintext, key, iv) => bytes`: decrypts the cipher text with the given key and iv using aes in ctr mode
+- `decrypt_aes_ofb(plaintext, key, iv) => bytes`: decrypts the cipher text with the given key and iv using aes in ofb mode
+- `seal_aes_gcm(plaintext, key, iv, additional_data?) => bytes`: encrypts and seals the plain text with the given key and iv using aes in gcm mode
+- `open_aes_gcm(plaintext, key, iv, additional_data?) => bytes`: decrypts and opens the cipher text with the given key and iv using aes in gcm mode
+- `blake2b_256(data) => bytes`: hashes the data with blake2b_256 [\*](#footnote-hash-availability)
+- `blake2b_256_hex(data) => string`: hashes the data with blake2b_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `blake2b_384(data) => bytes`: hashes the data with blake2b_384 [\*](#footnote-hash-availability)
+- `blake2b_384_hex(data) => string`: hashes the data with blake2b_384 and formats it as a hex string [\*](#footnote-hash-availability)
+- `blake2b_512(data) => bytes`: hashes the data with blake2b_512 [\*](#footnote-hash-availability)
+- `blake2b_512_hex(data) => string`: hashes the data with blake2b_512 and formats it as a hex string [\*](#footnote-hash-availability)
+- `blake2s_256(data) => bytes`: hashes the data with blake2s_256 [\*](#footnote-hash-availability)
+- `blake2s_256_hex(data) => string`: hashes the data with blake2s_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `md4(data) => bytes`: hashes the data with md4 [\*](#footnote-hash-availability)
+- `md4_hex(data) => string`: hashes the data with md4 and formats it as a hex string [\*](#footnote-hash-availability)
+- `md5(data) => bytes`: hashes the data with md5 [\*](#footnote-hash-availability)
+- `md5_hex(data) => string`: hashes the data with md5 and formats it as a hex string [\*](#footnote-hash-availability)
+- `ripemd160(data) => bytes`: hashes the data with ripemd160 [\*](#footnote-hash-availability)
+- `ripemd160_hex(data) => string`: hashes the data with ripemd160 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha1(data) => bytes`: hashes the data with sha1 [\*](#footnote-hash-availability)
+- `sha1_hex(data) => string`: hashes the data with sha1 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha224(data) => bytes`: hashes the data with sha224 [\*](#footnote-hash-availability)
+- `sha224_hex(data) => string`: hashes the data with sha224 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha256(data) => bytes`: hashes the data with sha256 [\*](#footnote-hash-availability)
+- `sha256_hex(data) => string`: hashes the data with sha256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha384(data) => bytes`: hashes the data with sha384 [\*](#footnote-hash-availability)
+- `sha384_hex(data) => string`: hashes the data with sha384 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha3_224(data) => bytes`: hashes the data with sha3_224 [\*](#footnote-hash-availability)
+- `sha3_224_hex(data) => string`: hashes the data with sha3_224 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha3_256(data) => bytes`: hashes the data with sha3_256 [\*](#footnote-hash-availability)
+- `sha3_256_hex(data) => string`: hashes the data with sha3_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha3_384(data) => bytes`: hashes the data with sha3_384 [\*](#footnote-hash-availability)
+- `sha3_384_hex(data) => string`: hashes the data with sha3_384 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha3_512(data) => bytes`: hashes the data with sha3_512 [\*](#footnote-hash-availability)
+- `sha3_512_hex(data) => string`: hashes the data with sha3_512 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha512(data) => bytes`: hashes the data with sha512 [\*](#footnote-hash-availability)
+- `sha512_hex(data) => string`: hashes the data with sha512 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha512_224(data) => bytes`: hashes the data with sha512_224 [\*](#footnote-hash-availability)
+- `sha512_224_hex(data) => string`: hashes the data with sha512_224 and formats it as a hex string [\*](#footnote-hash-availability)
+- `sha512_256(data) => bytes`: hashes the data with sha512_256 [\*](#footnote-hash-availability)
+- `sha512_256_hex(data) => string`: hashes the data with sha512_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_blake2b_256(data, key) => bytes`: hashes the data by using the given key with hmac_blake2b_256 [\*](#footnote-hash-availability)
+- `hmac_blake2b_256_hex(data) => string`: hashes the data by using the given key with hmac_blake2b_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_blake2b_384(data, key) => bytes`: hashes the data by using the given key with hmac_blake2b_384 [\*](#footnote-hash-availability)
+- `hmac_blake2b_384_hex(data) => string`: hashes the data by using the given key with hmac_blake2b_384 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_blake2b_512(data, key) => bytes`: hashes the data by using the given key with hmac_blake2b_512 [\*](#footnote-hash-availability)
+- `hmac_blake2b_512_hex(data) => string`: hashes the data by using the given key with hmac_blake2b_512 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_blake2s_256(data, key) => bytes`: hashes the data by using the given key with hmac_blake2s_256 [\*](#footnote-hash-availability)
+- `hmac_blake2s_256_hex(data) => string`: hashes the data by using the given key with hmac_blake2s_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_md4(data, key) => bytes`: hashes the data by using the given key with hmac_md4 [\*](#footnote-hash-availability)
+- `hmac_md4_hex(data) => string`: hashes the data by using the given key with hmac_md4 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_md5(data, key) => bytes`: hashes the data by using the given key with hmac_md5 [\*](#footnote-hash-availability)
+- `hmac_md5_hex(data) => string`: hashes the data by using the given key with hmac_md5 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_ripemd160(data, key) => bytes`: hashes the data by using the given key with hmac_ripemd160 [\*](#footnote-hash-availability)
+- `hmac_ripemd160_hex(data) => string`: hashes the data by using the given key with hmac_ripemd160 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha1(data, key) => bytes`: hashes the data by using the given key with hmac_sha1 [\*](#footnote-hash-availability)
+- `hmac_sha1_hex(data) => string`: hashes the data by using the given key with hmac_sha1 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha224(data, key) => bytes`: hashes the data by using the given key with hmac_sha224 [\*](#footnote-hash-availability)
+- `hmac_sha224_hex(data) => string`: hashes the data by using the given key with hmac_sha224 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha256(data, key) => bytes`: hashes the data by using the given key with hmac_sha256 [\*](#footnote-hash-availability)
+- `hmac_sha256_hex(data) => string`: hashes the data by using the given key with hmac_sha256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha384(data, key) => bytes`: hashes the data by using the given key with hmac_sha384 [\*](#footnote-hash-availability)
+- `hmac_sha384_hex(data) => string`: hashes the data by using the given key with hmac_sha384 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha3_224(data, key) => bytes`: hashes the data by using the given key with hmac_sha3_224 [\*](#footnote-hash-availability)
+- `hmac_sha3_224_hex(data) => string`: hashes the data by using the given key with hmac_sha3_224 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha3_256(data, key) => bytes`: hashes the data by using the given key with hmac_sha3_256 [\*](#footnote-hash-availability)
+- `hmac_sha3_256_hex(data) => string`: hashes the data by using the given key with hmac_sha3_256 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha3_384(data, key) => bytes`: hashes the data by using the given key with hmac_sha3_384 [\*](#footnote-hash-availability)
+- `hmac_sha3_384_hex(data) => string`: hashes the data by using the given key with hmac_sha3_384 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha3_512(data, key) => bytes`: hashes the data by using the given key with hmac_sha3_512 [\*](#footnote-hash-availability)
+- `hmac_sha3_512_hex(data) => string`: hashes the data by using the given key with hmac_sha3_512 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha512(data, key) => bytes`: hashes the data by using the given key with hmac_sha512 [\*](#footnote-hash-availability)
+- `hmac_sha512_hex(data) => string`: hashes the data by using the given key with hmac_sha512 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha512_224(data, key) => bytes`: hashes the data by using the given key with hmac_sha512_224 [\*](#footnote-hash-availability)
+- `hmac_sha512_224_hex(data) => string`: hashes the data by using the given key with hmac_sha512_224 and formats it as a hex string [\*](#footnote-hash-availability)
+- `hmac_sha512_256(data, key) => bytes`: hashes the data by using the given key with hmac_sha512_256 [\*](#footnote-hash-availability)
+- `hmac_sha512_256_hex(data) => string`: hashes the data by using the given key with hmac_sha512_256 and formats it as a hex string [\*](#footnote-hash-availability)
+
+<span id="footnote-hash-availability">You can only use hashes registered using crypto.RegisterHash before stdlib.ReloadCryptoAlgorithms() was called.</span>
